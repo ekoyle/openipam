@@ -551,6 +551,21 @@ def db_consumer(dbq, send_packet):
                 packet.PrintOptions()
                 print("#############################")
 
+            if packet.IsOption("server_id"):
+                packet_server_id = packet.GetOption("server_id")
+
+                my_server_id = list(
+                    map(int, packet.get_recv_interface()["address"].split("."))
+                )
+
+                if tuple(packet_server_id) != tuple(my_server_id):
+                    print(
+                        "ignoring packet for other server: %r != %r"
+                        % (packet_server_id, my_server_id)
+                    )
+                    log_packet(packet, prefix="IGN/NOTMINE:")
+                    return
+
             if action:
                 action(packet)
             else:
