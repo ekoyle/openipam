@@ -67,7 +67,7 @@ def start():
         process = processing.Process(
             target=consumer,
             args=(queue, server.SendPacket),
-            daemon=true,
+            daemon=True,
         )
         req_processes.append(process)
 
