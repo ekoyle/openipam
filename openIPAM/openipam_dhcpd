@@ -70,6 +70,7 @@ def start():
             daemon=True,
         )
         req_processes.append(process)
+        process.start()
 
     while True:
         server.HandlePacket()
