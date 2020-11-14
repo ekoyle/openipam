@@ -63,7 +63,7 @@ def start():
     server = dhcp_server.Server(req_queues=req_queues)
 
     req_processes = []
-    for q in req_queues:
+    for queue in req_queues:
         process = processing.Process(
             target=consumer,
             args=(queue, server.SendPacket),
