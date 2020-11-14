@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 #
 # pydhcplib
 # Copyright (C) 2005 Mathieu Ignacio -- mignacio@april.org
@@ -150,8 +150,8 @@ class Server:
     bootpc_port = 68
     bootps_port = 67
 
-    def __init__(self, dbq):
-        self.__dbq = dbq
+    def __init__(self, req_queues):
+        self.req_queues = req_queues
         # self.last_seen = {}
         self.seen = {}
         self.seen_cleanup = []
@@ -319,14 +319,15 @@ class Server:
         seen = self.seen[mac]
 
         # do some cleanup on our mac
-        while seen and seen[0][0] < min_timestamp:
+        while seen and seen[0]["timestamp"] < min_timestamp:
             del seen[0]
 
-            # do a little bit of housekeeping while we're at it
+        # do a little bit of housekeeping while we're at it
         if self.seen_cleanup:
             cleanup_mac = self.seen_cleanup.pop()
             while (
-                self.seen[cleanup_mac] and self.seen[cleanup_mac][0][0] < min_timestamp
+                self.seen[cleanup_mac]
+                and self.seen[cleanup_mac][0]["timestamp"] < min_timestamp
             ):
                 del self.seen[cleanup_mac][0]
             if not self.seen[cleanup_mac]:
@@ -391,24 +392,40 @@ class Server:
         packet.retry_count = 0
         packet.last_retry = 0
 
+        selected_queue = None
+        if seen:
+            selected_queue = seen[0]["queue"]
+        if selected_queue is None:
+            min_idx = 0
+            min_size = self.req_queues[0].qsize()
+            for i in range(len(self.req_queues)):
+                q = self.req_queues[i]
+                size = q.qsize()
+                if size < min_size:
+                    min_size = size
+                    min_idx = i
+
+            selected_queue = min_idx
+
         try:
             log_packet(packet, prefix="QUEUED:")
-            self.__dbq.put_nowait((pkttype, packet))
+            q = self.req_queues[selected_queue]
+            q.put_nowait((pkttype, packet))
         except Full:
             # The queue is full, try again later.
             log_packet(packet, prefix="IGN/FULL:", level=dhcp.logging.WARNING)
             print(
-                "ignoring req type %s from mac %s b/c the queue is full ... be afraid"
-                % (pkttype, mac)
+                "ignoring req type %s from mac %s b/c queue(%s) is full ... be afraid"
+                % (pkttype, mac, selected_queue)
             )
             return
 
-            # If we get here, the packet should be in the queue, so we can
-            # guarantee it will be seen by one of the workers.  Let's add
-            # this to our list of things we don't want to respond to right
-            # now.
-            # self.last_seen[ our_key ] = ( c_time )
-        seen.append((c_time, pkttype))
+        # If we get here, the packet should be in the queue, so we can
+        # guarantee it will be seen by one of the workers.  Let's add
+        # this to our list of things we don't want to respond to right
+        # now.
+        # self.last_seen[ our_key ] = ( c_time )
+        seen.append({"timestamp": c_time, "type": pkttype, "queue": selected_queue})
 
 
 def parse_packet(packet):
@@ -792,7 +809,7 @@ def db_consumer(dbq, send_packet):
             self.SendPacket(offer)
 
             # def SendDhcpPacketTo(self, To, packet):
-            # 	return self.dhcp_socket.sendto(packet.EncodePacket(),(To,self.emit_port))
+            #  return self.dhcp_socket.sendto(packet.EncodePacket(),(To,self.emit_port))
 
         def dhcp_request(self, packet):
             # check to see if lease is still valid, if so: extend lease and send an ACK

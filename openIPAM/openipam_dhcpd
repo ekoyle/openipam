@@ -48,25 +48,28 @@ parser.add_option(
 
 def consumer(*args, **kwargs):
     libc = ctypes.CDLL("libc.so.6")
-    # 1 = PR_SET_PDEATHSIG, 15 = TERM
-    # Should send a TERM to this child when the parent dies
-    libc.prctl(1, 15)
+    # 1 = PR_SET_PDEATHSIG, 15 = TERM, 9 = KILL
+    # Should send a KILL to this child when the parent dies
+    libc.prctl(1, 9)
     dhcp_server.db_consumer(*args, **kwargs)
 
 
 def start():
+    # max unhandled packets = (QLEN + 1) * NUM_WORKERS
     NUM_WORKERS = 10
-    db_requests = processing.Queue(NUM_WORKERS)
+    QLEN = 10
+    req_queues = [processing.Queue(QLEN) for i in range(NUM_WORKERS)]
 
-    server = dhcp_server.Server(dbq=db_requests)
+    server = dhcp_server.Server(req_queues=req_queues)
 
-    db_pool = processing.Pool(
-        processes=NUM_WORKERS,
-        initializer=consumer,
-        initargs=(db_requests, server.SendPacket),
-    )
-    atexit.register(db_pool.terminate)
-    atexit.register(db_pool.join)
+    req_processes = []
+    for q in req_queues:
+        process = processing.Process(
+            target=consumer,
+            args=(queue, server.SendPacket),
+            daemon=true,
+        )
+        req_processes.append(process)
 
     while True:
         server.HandlePacket()
